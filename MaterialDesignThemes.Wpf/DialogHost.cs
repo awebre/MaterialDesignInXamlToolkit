@@ -56,7 +56,7 @@ namespace MaterialDesignThemes.Wpf
         /// </summary>
         public static RoutedCommand CloseDialogCommand = new RoutedCommand();
 
-        private static readonly HashSet<DialogHost> LoadedInstances = new HashSet<DialogHost>();
+        private static readonly HashSet<DialogHost> AvailableInstances = new HashSet<DialogHost>();
 
         private readonly ManualResetEvent _asyncShowWaitHandle = new ManualResetEvent(false);
         private DialogOpenedEventHandler _asyncShowOpenedEventHandler;
@@ -73,6 +73,7 @@ namespace MaterialDesignThemes.Wpf
         private IInputElement _restoreFocusWindowReactivation;
         private Action _currentSnackbarMessageQueueUnPauseAction = null;
         private Action _closeCleanUp = () => { };
+        private bool _wasClosedOnUnloading = false;
 
         static DialogHost()
         {
@@ -172,11 +173,11 @@ namespace MaterialDesignThemes.Wpf
         {
             if (content == null) throw new ArgumentNullException(nameof(content));
 
-            if (LoadedInstances.Count == 0)
+            if (AvailableInstances.Count == 0)
                 throw new InvalidOperationException("No loaded DialogHost instances.");
-            LoadedInstances.First().Dispatcher.VerifyAccess();
+            AvailableInstances.First().Dispatcher.VerifyAccess();
 
-            var targets = LoadedInstances.Where(dh => dialogIdentifier == null || Equals(dh.Identifier, dialogIdentifier)).ToList();
+            var targets = AvailableInstances.Where(dh => dialogIdentifier == null || Equals(dh.Identifier, dialogIdentifier)).ToList();
             if (targets.Count == 0)
                 throw new InvalidOperationException("No loaded DialogHost have an Identifier property matching dialogIndetifier argument.");
             if (targets.Count > 1)
@@ -214,6 +215,7 @@ namespace MaterialDesignThemes.Wpf
 
         public DialogHost()
         {
+            Initialized += OnInitiated;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
 
@@ -251,7 +253,14 @@ namespace MaterialDesignThemes.Wpf
             }
             else
             {
-                dialogHost._asyncShowWaitHandle.Set();
+                if (!dialogHost._wasClosedOnUnloading)
+                {
+                    dialogHost._asyncShowWaitHandle.Set();
+                }
+                else
+                {
+                    dialogHost._asyncShowWaitHandle.Reset();
+                }
                 dialogHost._attachedDialogClosingEventHandler = null;
                 if (dialogHost._currentSnackbarMessageQueueUnPauseAction != null)
                 {
@@ -661,15 +670,27 @@ namespace MaterialDesignThemes.Wpf
             return IsOpen ? OpenStateName : ClosedStateName;
         }
 
-        private void OnUnloaded(object sender, RoutedEventArgs routedEventArgs)
-        {
-            LoadedInstances.Remove(this);
-            SetCurrentValue(IsOpenProperty, false);
-        }
-
         private void OnLoaded(object sender, RoutedEventArgs routedEventArgs)
         {
-            LoadedInstances.Add(this);
+            if (_wasClosedOnUnloading)
+            {
+                SetCurrentValue(IsOpenProperty, true);
+                _wasClosedOnUnloading = false;
+            }
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs routedEventArgs)
+        {
+            if (IsOpen)
+            {
+                _wasClosedOnUnloading = true;
+                SetCurrentValue(IsOpenProperty, false);
+            }
+        }
+
+        private void OnInitiated(object sender, EventArgs eventArgs)
+        {
+            AvailableInstances.Add(this);
         }
 
         private static void WatchWindowActivation(DialogHost dialogHost)
