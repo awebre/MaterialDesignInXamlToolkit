@@ -56,7 +56,7 @@ namespace MaterialDesignThemes.Wpf
         /// </summary>
         public static RoutedCommand CloseDialogCommand = new RoutedCommand();
 
-        private static readonly HashSet<DialogHost> AvailableInstances = new HashSet<DialogHost>();
+        private static readonly HashSet<DialogHost> LoadedInstances = new HashSet<DialogHost>();
 
         private readonly ManualResetEvent _asyncShowWaitHandle = new ManualResetEvent(false);
         private DialogOpenedEventHandler _asyncShowOpenedEventHandler;
@@ -173,11 +173,11 @@ namespace MaterialDesignThemes.Wpf
         {
             if (content == null) throw new ArgumentNullException(nameof(content));
 
-            if (AvailableInstances.Count == 0)
+            if (LoadedInstances.Count == 0)
                 throw new InvalidOperationException("No loaded DialogHost instances.");
-            AvailableInstances.First().Dispatcher.VerifyAccess();
+            LoadedInstances.First().Dispatcher.VerifyAccess();
 
-            var targets = AvailableInstances.Where(dh => dialogIdentifier == null || Equals(dh.Identifier, dialogIdentifier)).ToList();
+            var targets = LoadedInstances.Where(dh => dialogIdentifier == null || Equals(dh.Identifier, dialogIdentifier)).ToList();
             if (targets.Count == 0)
                 throw new InvalidOperationException("No loaded DialogHost have an Identifier property matching dialogIndetifier argument.");
             if (targets.Count > 1)
@@ -215,7 +215,6 @@ namespace MaterialDesignThemes.Wpf
 
         public DialogHost()
         {
-            Initialized += OnInitiated;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
 
@@ -672,6 +671,7 @@ namespace MaterialDesignThemes.Wpf
 
         private void OnLoaded(object sender, RoutedEventArgs routedEventArgs)
         {
+            LoadedInstances.Add(this);
             if (_wasClosedOnUnloading)
             {
                 SetCurrentValue(IsOpenProperty, true);
@@ -681,16 +681,12 @@ namespace MaterialDesignThemes.Wpf
 
         private void OnUnloaded(object sender, RoutedEventArgs routedEventArgs)
         {
+            LoadedInstances.Remove(this);
             if (IsOpen)
             {
                 _wasClosedOnUnloading = true;
                 SetCurrentValue(IsOpenProperty, false);
             }
-        }
-
-        private void OnInitiated(object sender, EventArgs eventArgs)
-        {
-            AvailableInstances.Add(this);
         }
 
         private static void WatchWindowActivation(DialogHost dialogHost)
